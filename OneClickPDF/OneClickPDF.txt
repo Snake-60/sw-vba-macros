@@ -1,20 +1,30 @@
-'******************************************************************************************
+'*********************************************************************************************
 'Copyright(C) 2020 Xarial Pty Limited
 'Reference: https://www.codestack.net/solidworks-api/import-export/export-sheets-pdf/
 'License: https://www.codestack.net/license/
-'******************************************************************************************
-' Moddified by Snake 60::(28.11.2020):: version 1.0.0
-'  - macros save drawing in PDF-format in precreated PDF folder and open it
-'******************************************************************************************
+'*********************************************************************************************
+' Изменения и дополнения от Snake 60
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' Последние изменения :: (26.04.2020) ::
+''' в версии 1.0.3 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' - Убрал дублирование открытых папок при каждом сохранении
+''' в версии 1.0.2 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' - Если в чертеже 2 или более страниц, то создаются файлы в формате ИмяФайла - ИмяЛиста.pdf
+' - Если в чертеже 1 страница, то создается файл в формате ИмяФайла.pdf
+''' в версии 1.0.1 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' - макрос сохраняет чертеж в формате PDF, создает папку PDF и открывает ее после сохранения
+'*********************************************************************************************
 
 Const INCLUDE_DRAWING_NAME As Boolean = True
+Const FOLDER_FOR_SAVING As String = ""           'сохраняем в папку с чертежем
+'Const FOLDER_FOR_SAVING As String = "PDF" 'сохраняем в указанную папку, папка создается автоматически
 
 Dim swApp As SldWorks.SldWorks
 Dim swModel As SldWorks.ModelDoc2
 
 Dim outFile As String
 Dim outFolder As String
-
+Dim outFolderStrip As String
 
 Sub main()
 
@@ -28,7 +38,6 @@ try_:
     
     Set swDraw = swApp.ActiveDoc
     
-    
     Set swModel = swDraw
         
     If swModel.GetPathName() = "" Then
@@ -36,10 +45,39 @@ try_:
     End If
         
     Dim vSheetNames As Variant
-    vSheetNames = swDraw.GetSheetNames
     
     Dim i As Integer
+
+    Dim swSelMgr As SldWorks.SelectionMgr
     
+    Set swSelMgr = swModel.SelectionManager
+    
+    Dim selSheetNames() As String
+    
+    For i = 1 To swSelMgr.GetSelectedObjectCount2(-1)
+        
+        If swSelMgr.GetSelectedObjectType3(i, -1) = swSelectType_e.swSelSHEETS Then
+            
+            If (Not selSheetNames) = -1 Then
+                ReDim selSheetNames(0)
+            Else
+                ReDim Preserve selSheetNames(UBound(selSheetNames) + 1)
+            End If
+            Dim swSheet As SldWorks.Sheet
+            Set swSheet = swSelMgr.GetSelectedObject6(i, -1)
+            
+            selSheetNames(UBound(selSheetNames)) = swSheet.GetName()
+            
+        End If
+    Next
+    
+    If (Not selSheetNames) = -1 Then
+        vSheetNames = swDraw.GetSheetNames
+    Else
+        vSheetNames = selSheetNames
+    End If
+    
+    'запускаем цикл обработки по кол-ву листов чертежа
     For i = 0 To UBound(vSheetNames)
         
         Dim sheetName As String
@@ -62,20 +100,49 @@ try_:
         drawName = swModel.GetPathName()
         drawName = Mid(drawName, InStrRev(drawName, "\") + 1, Len(drawName) - InStrRev(drawName, "\") - Len(".slddrw"))
         
-
         outFile = swModel.GetPathName()
         outFile = Left(outFile, InStrRev(outFile, "\"))
         'outFile = outFile & IIf(INCLUDE_DRAWING_NAME, drawName & "_", "") & sheetName & ".pdf"
-        outFolder = outFile & "PDF" & "\"
-        outFile = outFolder & IIf(INCLUDE_DRAWING_NAME, drawName, "") & ".pdf"
-
         
-        If False = swModel.Extension.SaveAs(outFile, swSaveAsVersion_e.swSaveAsCurrentVersion, swSaveAsOptions_e.swSaveAsOptions_Silent, swExpPdfData, errs, warns) Then
+        outFolder = outFile & FOLDER_FOR_SAVING  '& "\"
 
+        outFolderStrip = outFile & FOLDER_FOR_SAVING
+        
+        '        outFolder = outFile & FOLDER_FOR_SAVING & "\"
+        '
+        '        outFolderStrip = outFile & FOLDER_FOR_SAVING
+        
+        
+        'если папка не существует, то
+        If Not DirExists(outFolder) Then
+            'создаем ее
+            MkDir (outFolder)
+        End If
+        
+        'если листов в чертеже 1, то
+        If UBound(vSheetNames) = 0 Then
+            'сохраняем PDF-файл в формате ИмяФайла.pdf
+            outFile = outFolder & IIf(INCLUDE_DRAWING_NAME, drawName, "") & ".pdf"
+            'иначе
+        Else
+            'сохраняем PDF-файл в формате ИмяФайла - ИмяЛиста.pdf
+            outFile = outFolder & IIf(INCLUDE_DRAWING_NAME, drawName & "-", "") & sheetName & ".pdf"
+        End If
+        
+        'если ошибка не произошла, то выполняем сохранение
+        If False = swModel.Extension.SaveAs(outFile, swSaveAsVersion_e.swSaveAsCurrentVersion, swSaveAsOptions_e.swSaveAsOptions_Silent, swExpPdfData, errs, warns) Then
+            'иначе выводим сообщение об ошибке
             Err.Raise vbError, "", "Не удалось сохранить PDF в " & outFile
         End If
         
+        'переходим к следующему листу чертежа
     Next
+    
+    If False <> swDraw.GetSaveFlag() Then
+        If False = swDraw.Save3(swSaveAsOptions_e.swSaveAsOptions_Silent, errs, warns) Then
+            Err.Raise vbError, "", "Не удалось сохранить чертеж"
+        End If
+    End If
     
     OpenFolder
     
@@ -86,21 +153,53 @@ catch_:
     swApp.SendMsgToUser2 Err.Description, swMessageBoxIcon_e.swMbStop, swMessageBoxBtn_e.swMbOk
     
 finally_:
+
+    swApp.CloseDoc swDraw.GetTitle
     
 End Sub
 
-Sub OpenFolder()
-Set swApp = Application.SldWorks
-Set swModel = swApp.ActiveDoc
-OpenExplorerWithFileSelected (outFile)
-End Sub
+Function OpenFolder()
 
-Sub OpenExplorerWithFileSelected(filepath$)
-'Test for file exists
-retval = Dir(filepath$)
-If retval <> "" Then
-    'If Exists, then open Windows Explorer and select
-    shellparm = "/select," & filepath$
-    Shell "explorer """"" & shellparm & """""", vbNormalFocus
-End If
-End Sub
+    Set swApp = Application.SldWorks
+    Set swModel = swApp.ActiveDoc
+    
+    IsFolderOpen (outFolder)
+
+End Function
+
+Function IsFolderOpen(folderpath$)
+
+    With CreateObject("Shell.Application")
+        Dim iWin As Object
+        Dim PathCompare As String
+        For Each iWin In .Windows
+            PathCompare = Replace(iWin.LocationURL, "file:///", "")
+            PathCompare = Replace(PathCompare, "%20", " ")
+            PathCompare = Replace(PathCompare, "/", "\")
+            If iWin.LocationName = FOLDER_FOR_SAVING And PathCompare = outFolderStrip Then
+                'If iWin.LocationURL = "file:///C:/Имя%20папки" Then
+                .Open iWin.LocationURL
+                GoTo step1_
+            End If
+        Next
+    End With
+    OpenExplorerWithFileSelected (outFile)
+step1_:
+End Function
+
+Function OpenExplorerWithFileSelected(filepath$)
+    'Test for file exists
+    retval = Dir(filepath$)
+    If retval <> "" Then
+        Shell "explorer.exe /select, " & """" & filepath$ & """", vbNormalFocus
+    End If
+End Function
+
+'Функция проверки существования дирректории
+Function DirExists(outFolder As String) As Boolean
+    On Error GoTo ErrorHandler
+    DirExists = GetAttr(outFolder) And vbDirectory
+ErrorHandler:
+    'Завершение функции
+End Function
+
