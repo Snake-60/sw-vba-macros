@@ -3,9 +3,11 @@
 'Reference: https://www.codestack.net/solidworks-api/import-export/export-sheets-pdf/
 'License: https://www.codestack.net/license/
 '*********************************************************************************************
-' Изменения и дополнения от Snake 60
+' Изменения и дополнения: Дербуш Олег aka Snake-60 (snake-60@bk.ru)
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-' Последние изменения :: (26.04.2020) ::
+' Последние изменения :: (18.11.2021) ::
+''' в версии 1.0.4 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' - Убрал косяк при сохранении чертежей в папку
 ''' в версии 1.0.3 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 ' - Убрал дублирование открытых папок при каждом сохранении
 ''' в версии 1.0.2 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -16,7 +18,7 @@
 '*********************************************************************************************
 
 Const INCLUDE_DRAWING_NAME As Boolean = True
-Const FOLDER_FOR_SAVING As String = ""           'сохраняем в папку с чертежем
+Const FOLDER_FOR_SAVING As String = "" 'сохраняем в папку с чертежем
 'Const FOLDER_FOR_SAVING As String = "PDF" 'сохраняем в указанную папку, папка создается автоматически
 
 Dim swApp As SldWorks.SldWorks
@@ -104,15 +106,14 @@ try_:
         outFile = Left(outFile, InStrRev(outFile, "\"))
         'outFile = outFile & IIf(INCLUDE_DRAWING_NAME, drawName & "_", "") & sheetName & ".pdf"
         
-        outFolder = outFile & FOLDER_FOR_SAVING  '& "\"
+        If FOLDER_FOR_SAVING = "" Then
+            outFolder = outFile & FOLDER_FOR_SAVING
+            outFolderStrip = outFolder
+        Else
+            outFolder = outFile & FOLDER_FOR_SAVING & "\"
+            outFolderStrip = outFile & FOLDER_FOR_SAVING
+        End If
 
-        outFolderStrip = outFile & FOLDER_FOR_SAVING
-        
-        '        outFolder = outFile & FOLDER_FOR_SAVING & "\"
-        '
-        '        outFolderStrip = outFile & FOLDER_FOR_SAVING
-        
-        
         'если папка не существует, то
         If Not DirExists(outFolder) Then
             'создаем ее
@@ -123,7 +124,7 @@ try_:
         If UBound(vSheetNames) = 0 Then
             'сохраняем PDF-файл в формате ИмяФайла.pdf
             outFile = outFolder & IIf(INCLUDE_DRAWING_NAME, drawName, "") & ".pdf"
-            'иначе
+        'иначе
         Else
             'сохраняем PDF-файл в формате ИмяФайла - ИмяЛиста.pdf
             outFile = outFolder & IIf(INCLUDE_DRAWING_NAME, drawName & "-", "") & sheetName & ".pdf"
@@ -135,7 +136,7 @@ try_:
             Err.Raise vbError, "", "Не удалось сохранить PDF в " & outFile
         End If
         
-        'переходим к следующему листу чертежа
+    'переходим к следующему листу чертежа
     Next
     
     If False <> swDraw.GetSaveFlag() Then
@@ -154,7 +155,7 @@ catch_:
     
 finally_:
 
-    swApp.CloseDoc swDraw.GetTitle
+swApp.CloseDoc swDraw.GetTitle
     
 End Sub
 
@@ -176,22 +177,21 @@ Function IsFolderOpen(folderpath$)
             PathCompare = Replace(iWin.LocationURL, "file:///", "")
             PathCompare = Replace(PathCompare, "%20", " ")
             PathCompare = Replace(PathCompare, "/", "\")
-            If iWin.LocationName = FOLDER_FOR_SAVING And PathCompare = outFolderStrip Then
-                'If iWin.LocationURL = "file:///C:/Имя%20папки" Then
+             If iWin.LocationName = FOLDER_FOR_SAVING And PathCompare = outFolderStrip Then
                 .Open iWin.LocationURL
                 GoTo step1_
-            End If
-        Next
+             End If
+         Next
     End With
     OpenExplorerWithFileSelected (outFile)
 step1_:
 End Function
 
 Function OpenExplorerWithFileSelected(filepath$)
-    'Test for file exists
-    retval = Dir(filepath$)
+'Test for file exists
+retval = Dir(filepath$)
     If retval <> "" Then
-        Shell "explorer.exe /select, " & """" & filepath$ & """", vbNormalFocus
+            Shell "explorer.exe /select, " & """" & filepath$ & """", vbNormalFocus
     End If
 End Function
 
@@ -200,6 +200,5 @@ Function DirExists(outFolder As String) As Boolean
     On Error GoTo ErrorHandler
     DirExists = GetAttr(outFolder) And vbDirectory
 ErrorHandler:
-    'Завершение функции
+'Завершение функции
 End Function
-
