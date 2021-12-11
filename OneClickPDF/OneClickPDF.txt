@@ -5,7 +5,9 @@
 '*********************************************************************************************
 ' Изменения и дополнения: Дербуш Олег aka Snake-60 (snake-60@bk.ru)
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-' Последние изменения :: (18.11.2021) ::
+' Последние изменения :: (11.12.2021) ::
+''' в версии 1.0.5 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+' - Добавил возможность сохранять по абсолютному пути
 ''' в версии 1.0.4 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 ' - Убрал косяк при сохранении чертежей в папку
 ''' в версии 1.0.3 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -18,8 +20,9 @@
 '*********************************************************************************************
 
 Const INCLUDE_DRAWING_NAME As Boolean = True
-Const FOLDER_FOR_SAVING As String = "" 'сохраняем в папку с чертежем
+'Const FOLDER_FOR_SAVING As String = "" 'сохраняем в папку с чертежем
 'Const FOLDER_FOR_SAVING As String = "PDF" 'сохраняем в указанную папку, папка создается автоматически
+Const FOLDER_FOR_SAVING As String = "D:\SW\Работа в SOLIDWORKS\Кучинский\ШС\ШС\1.CAD\PDF"
 
 Dim swApp As SldWorks.SldWorks
 Dim swModel As SldWorks.ModelDoc2
@@ -104,11 +107,16 @@ try_:
         
         outFile = swModel.GetPathName()
         outFile = Left(outFile, InStrRev(outFile, "\"))
-        'outFile = outFile & IIf(INCLUDE_DRAWING_NAME, drawName & "_", "") & sheetName & ".pdf"
         
+        'если сохраняем в папку с чертежем
         If FOLDER_FOR_SAVING = "" Then
             outFolder = outFile & FOLDER_FOR_SAVING
             outFolderStrip = outFolder
+        'если сохраняем по абсолютному пути, то есть в пути есть символ ":"
+        ElseIf InStr(1, FOLDER_FOR_SAVING, ":", vbBinaryCompare) <> 0 Then
+            outFolder = FOLDER_FOR_SAVING & "\"
+            outFolderStrip = FOLDER_FOR_SAVING
+        'если сохраняем в указанную папку
         Else
             outFolder = outFile & FOLDER_FOR_SAVING & "\"
             outFolderStrip = outFile & FOLDER_FOR_SAVING
