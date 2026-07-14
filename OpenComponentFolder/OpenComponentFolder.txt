@@ -229,4 +229,3 @@ Sub BringWindowToFront(hWnd As Long)
     SetForegroundWindow hWnd
     AttachThreadInput lMyThread, lTgtThread, False
 End Sub
-
