@@ -1,0 +1,232 @@
+'Макрос открытия окна компонента - не плодит окна, а активирует компонент в открытом окне, если окно не открыто, только тогда открывает его
+' OpenComponentFolder v2.0 by Дербуш Олег aka Snake 60 от 04.03.2026
+
+Option Explicit
+
+#If VBA7 Then
+    Private Declare PtrSafe Function ShowWindow Lib "user32" _
+        (ByVal hWnd As LongPtr, ByVal nCmdShow As Long) As Long
+    Private Declare PtrSafe Function SetForegroundWindow Lib "user32" _
+        (ByVal hWnd As LongPtr) As Long
+    Private Declare PtrSafe Function GetWindowTextA Lib "user32" _
+        (ByVal hWnd As LongPtr, ByVal lpString As String, ByVal cch As Long) As Long
+    Private Declare PtrSafe Function GetClassNameA Lib "user32" _
+        (ByVal hWnd As LongPtr, ByVal lpClassName As String, ByVal nMaxCount As Long) As Long
+    Private Declare PtrSafe Function EnumWindows Lib "user32" _
+        (ByVal lpEnumFunc As LongPtr, ByVal lParam As LongPtr) As Long
+    Private Declare PtrSafe Function AttachThreadInput Lib "user32" _
+        (ByVal idAttach As Long, ByVal idAttachTo As Long, ByVal fAttach As Long) As Long
+    Private Declare PtrSafe Function GetWindowThreadProcessId Lib "user32" _
+        (ByVal hWnd As LongPtr, ByRef lpdwProcessId As Long) As Long
+    Private Declare PtrSafe Function GetCurrentThreadId Lib "kernel32" () As Long
+    Private Declare PtrSafe Function SHParseDisplayName Lib "shell32" _
+        (ByVal pszName As LongPtr, ByVal pbc As LongPtr, ByRef ppidl As LongPtr, _
+         ByVal sfgaoIn As Long, ByRef psfgaoOut As Long) As Long
+    Private Declare PtrSafe Function SHOpenFolderAndSelectItems Lib "shell32" _
+        (ByVal pidlFolder As LongPtr, ByVal cidl As Long, _
+         ByVal apidl As LongPtr, ByVal dwFlags As Long) As Long
+    Private Declare PtrSafe Sub CoTaskMemFree Lib "ole32" _
+        (ByVal pv As LongPtr)
+    Private Declare PtrSafe Function ILFindLastID Lib "shell32" _
+        (ByVal pidl As LongPtr) As LongPtr
+    Private Declare PtrSafe Function ILClone Lib "shell32" _
+        (ByVal pidl As LongPtr) As LongPtr
+    Private Declare PtrSafe Function ILRemoveLastID Lib "shell32" _
+        (ByVal pidl As LongPtr) As Long
+#Else
+    Private Declare Function ShowWindow Lib "user32" _
+        (ByVal hWnd As Long, ByVal nCmdShow As Long) As Long
+    Private Declare Function SetForegroundWindow Lib "user32" _
+        (ByVal hWnd As Long) As Long
+    Private Declare Function GetWindowTextA Lib "user32" _
+        (ByVal hWnd As Long, ByVal lpString As String, ByVal cch As Long) As Long
+    Private Declare Function GetClassNameA Lib "user32" _
+        (ByVal hWnd As Long, ByVal lpClassName As String, ByVal nMaxCount As Long) As Long
+    Private Declare Function EnumWindows Lib "user32" _
+        (ByVal lpEnumFunc As Long, ByVal lParam As Long) As Long
+    Private Declare Function AttachThreadInput Lib "user32" _
+        (ByVal idAttach As Long, ByVal idAttachTo As Long, ByVal fAttach As Long) As Long
+    Private Declare Function GetWindowThreadProcessId Lib "user32" _
+        (ByVal hWnd As Long, ByRef lpdwProcessId As Long) As Long
+    Private Declare Function GetCurrentThreadId Lib "kernel32" () As Long
+    Private Declare Function SHParseDisplayName Lib "shell32" _
+        (ByVal pszName As Long, ByVal pbc As Long, ByRef ppidl As Long, _
+         ByVal sfgaoIn As Long, ByRef psfgaoOut As Long) As Long
+    Private Declare Function SHOpenFolderAndSelectItems Lib "shell32" _
+        (ByVal pidlFolder As Long, ByVal cidl As Long, _
+         ByVal apidl As Long, ByVal dwFlags As Long) As Long
+    Private Declare Sub CoTaskMemFree Lib "ole32" _
+        (ByVal pv As Long)
+    Private Declare Function ILFindLastID Lib "shell32" _
+        (ByVal pidl As Long) As Long
+    Private Declare Function ILClone Lib "shell32" _
+        (ByVal pidl As Long) As Long
+    Private Declare Function ILRemoveLastID Lib "shell32" _
+        (ByVal pidl As Long) As Long
+#End If
+
+Private sSearchFolderName   As String
+#If VBA7 Then
+    Private hFoundWnd       As LongPtr
+#Else
+    Private hFoundWnd       As Long
+#End If
+
+Dim swApp    As SldWorks.SldWorks
+Dim swModel  As SldWorks.ModelDoc2
+Dim swSelMgr As SldWorks.SelectionMgr
+Dim swComp   As SldWorks.Component2
+
+' ============================================================
+' ГЛАВНАЯ ПРОЦЕДУРА
+' ============================================================
+Sub main()
+
+    Set swApp = Application.SldWorks
+    Set swModel = swApp.ActiveDoc
+
+    If swModel Is Nothing Then
+        MsgBox "Пожалуйста, откройте документ"
+        Exit Sub
+    End If
+
+    Set swSelMgr = swModel.SelectionManager
+    Set swComp = swSelMgr.GetSelectedObjectsComponent3(1, -1)
+
+    Dim sPath As String
+
+    If Not swComp Is Nothing Then
+        sPath = swComp.GetPathName
+    Else
+        sPath = swModel.GetPathName
+    End If
+
+    If sPath = "" Then
+        MsgBox "Модель не сохранена"
+        Exit Sub
+    End If
+
+    'Debug.Print "=== СТАРТ ==="
+    'Debug.Print "Файл: [" & sPath & "]"
+
+    ' Имя папки для поиска в заголовке окна проводника
+    Dim sDir As String
+    sDir = Left(sPath, InStrRev(sPath, "\") - 1)
+    sSearchFolderName = Mid(sDir, InStrRev(sDir, "\") + 1)
+    'Debug.Print "Папка для поиска: [" & sSearchFolderName & "]"
+
+    ' Ищем окно проводника через EnumWindows
+    hFoundWnd = 0
+    EnumWindows AddressOf EnumWindowsProc, 0
+
+    If hFoundWnd <> 0 Then
+        'Debug.Print "Окно найдено hWnd: " & hFoundWnd & " — активируем"
+        BringWindowToFront hFoundWnd
+    Else
+        'Debug.Print "Окно не найдено — открываем новое"
+    End If
+
+    ' В обоих случаях используем SHOpenFolderAndSelectItems
+    ' — если окно уже есть, оно будет переиспользовано Windows
+    OpenFolderAndSelect sPath
+
+    'Debug.Print "=== ГОТОВО ==="
+
+End Sub
+
+' ============================================================
+' Callback для EnumWindows — ищем окно проводника по имени папки
+' ============================================================
+#If VBA7 Then
+Public Function EnumWindowsProc(ByVal hWnd As LongPtr, ByVal lParam As LongPtr) As Long
+#Else
+Public Function EnumWindowsProc(ByVal hWnd As Long, ByVal lParam As Long) As Long
+#End If
+
+    Dim sClass  As String * 256
+    Dim sTitle  As String * 256
+    Dim lLen    As Long
+
+    GetClassNameA hWnd, sClass, 255
+    Dim sClassName As String
+    sClassName = Left(sClass, InStr(sClass, Chr(0)) - 1)
+
+    If sClassName = "CabinetWClass" Then
+        GetWindowTextA hWnd, sTitle, 255
+        Dim sWinTitle As String
+        sWinTitle = Left(sTitle, InStr(sTitle, Chr(0)) - 1)
+
+        'Debug.Print "Найдено окно CabinetWClass: [" & sWinTitle & "]"
+
+        If LCase(sWinTitle) = LCase(sSearchFolderName) Then
+            hFoundWnd = hWnd
+            EnumWindowsProc = 0
+            Exit Function
+        End If
+    End If
+
+    EnumWindowsProc = 1
+
+End Function
+
+' ============================================================
+' Открываем папку и выделяем файл через SHOpenFolderAndSelectItems
+' ============================================================
+Sub OpenFolderAndSelect(sFilePath As String)
+
+    #If VBA7 Then
+        Dim pidlFull    As LongPtr
+        Dim pidlFolder  As LongPtr
+        Dim pidlChild   As LongPtr
+    #Else
+        Dim pidlFull    As Long
+        Dim pidlFolder  As Long
+        Dim pidlChild   As Long
+    #End If
+
+    Dim lAttr       As Long
+    Dim hr          As Long
+
+    hr = SHParseDisplayName(StrPtr(sFilePath), 0, pidlFull, 0, lAttr)
+
+    If hr <> 0 Or pidlFull = 0 Then
+        'Debug.Print "SHParseDisplayName ошибка: 0x" & Hex(hr)
+        Shell "explorer.exe /select," & """" & sFilePath & """", vbNormalFocus
+        Exit Sub
+    End If
+
+    'Debug.Print "SHParseDisplayName OK, pidlFull: " & pidlFull
+
+    pidlFolder = ILClone(pidlFull)
+    ILRemoveLastID pidlFolder
+    pidlChild = ILFindLastID(pidlFull)
+
+    hr = SHOpenFolderAndSelectItems(pidlFolder, 1, VarPtr(pidlChild), 0)
+    'Debug.Print "SHOpenFolderAndSelectItems результат: 0x" & Hex(hr)
+
+    CoTaskMemFree pidlFull
+    CoTaskMemFree pidlFolder
+
+End Sub
+
+' ============================================================
+' Поднимаем окно на передний план
+' ============================================================
+#If VBA7 Then
+Sub BringWindowToFront(hWnd As LongPtr)
+#Else
+Sub BringWindowToFront(hWnd As Long)
+#End If
+    Dim lMyThread  As Long
+    Dim lTgtThread As Long
+    Dim lProcessId As Long
+
+    lMyThread = GetCurrentThreadId()
+    lTgtThread = GetWindowThreadProcessId(hWnd, lProcessId)
+
+    AttachThreadInput lMyThread, lTgtThread, True
+    ShowWindow hWnd, 9
+    SetForegroundWindow hWnd
+    AttachThreadInput lMyThread, lTgtThread, False
+End Sub
+
